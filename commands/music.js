@@ -58,11 +58,15 @@ module.exports = {
           selfDeaf: true
         })
 
+        // await interaction.reply('Bot doesn\'t have permission to join voice channel.')
+        // return;
+
         connection.on(VoiceConnectionStatus.Disconnected, () => {
           const songQueue = queue.get(interaction.guildId)
           songQueue.timeout = setTimeout(() => {
             const connection = getVoiceConnection(interaction.guildId)
-            connection.destroy();
+            if (connection)
+              connection.destroy();
           }, 1000);
         })
         connection.on(VoiceConnectionStatus.Destroyed, () => {
@@ -70,39 +74,40 @@ module.exports = {
         })
         connection.on(VoiceConnectionStatus.Ready, () => {
           const songQueue = queue.get(interaction.guildId)
-          if (songQueue.timeout) {
+          if (songQueue?.timeout) {
             clearTimeout(songQueue.timeout)
           }
         })
+        connection.once(VoiceConnectionStatus.Ready, () => {
+          const player = new AudioPlayer()
 
-        const player = new AudioPlayer()
+          player.on(AudioPlayerStatus.Idle, () => {
+            const songQueue = queue.get(interaction.guildId)
+            if (!songQueue.songs[0]?.loop) {
+              songQueue.songs.shift()
+            }
+            play(interaction.guildId, songQueue.songs[0])
+          })
 
-        player.on(AudioPlayerStatus.Idle, () => {
-          const songQueue = queue.get(interaction.guildId)
-          if (!songQueue.songs[0]?.loop) {
-            songQueue.songs.shift()
+          connection.subscribe(player)
+
+          const newQueue = {
+            voiceChannel,
+            textChannel: interaction.channel,
+            player,
+            songs: []
           }
-          play(interaction.guildId, songQueue.songs[0])
+
+          queue.set(interaction.guildId, newQueue);
+          newQueue.songs.push(song)
+
+
+          play(interaction.guildId, newQueue.songs[0])
         })
-
-        connection.subscribe(player)
-
-        const newQueue = {
-          voiceChannel,
-          textChannel: interaction.channel,
-          player,
-          songs: []
-        }
-
-        queue.set(interaction.guildId, newQueue);
-        newQueue.songs.push(song)
-
-
-        play(interaction.guildId, newQueue.songs[0])
       } catch (error) {
         queue.delete(interaction.guildId)
-        return await interaction.reply('There is an error on connection.')
         console.log(error);
+        return await interaction.reply('There is an error on connection.')
       }
     } else {
       serverQueue.songs.push(song)
